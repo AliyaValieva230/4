@@ -1,0 +1,90 @@
+import multiprocessing
+import math
+import logging
+import psutil
+from threading import Thread
+from multiprocessing import Process, Manager
+
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(processName)s - %(levelname)s - %(message)s')
+
+
+def is_prime(num):
+
+    if num < 2:
+        return False
+    for i in range(2, int(math.sqrt(num)) + 1):
+        if num % i == 0:
+            return False
+    return True
+
+
+def save_primes_to_file(primes, process_id):
+
+    filename = f"primes_process_{process_id}.txt"
+    with open(filename, "w") as f:
+        for prime in primes:
+            f.write(f"{prime}\n")
+    logging.info(f"Процесс {process_id} сохранил {len(primes)} чисел в {filename}")
+
+
+def find_primes(start, end, process_id, result_list):
+    logging.info(f"Начало поиска простых чисел от {start} до {end}")
+    primes = []
+
+    for num in range(start, end + 1):
+        if is_prime(num):
+            primes.append(num)
+
+    save_thread = Thread(target=save_primes_to_file, args=(primes, process_id))
+    save_thread.start()
+
+    result_list.extend(primes)
+
+    logging.info(f"Процесс {process_id} завершил поиск, найдено {len(primes)} простых чисел")
+    save_thread.join()
+
+
+def get_available_processes():
+    cpu_count = psutil.cpu_count(logical=True)
+    cpu_percent = psutil.cpu_percent(interval=1)
+
+    available_ratio = (100 - cpu_percent) / 100
+    available_processes = max(1, min(cpu_count, int(cpu_count * 0.75)))
+
+    logging.info(f"Доступно ядер: {cpu_count}, загрузка CPU: {cpu_percent}%, доступно процессов: {available_processes}")
+    return available_processes
+
+
+def main():
+    try:
+        max_number = int(input("Введите верхнюю границу для поиска простых чисел: "))
+        if max_number < 2:
+            print("Число должно быть больше 1")
+            return
+        num_processes = get_available_processes()
+        logging.info(f"Будет использовано {num_processes} процессов")
+        step = max_number // num_processes
+        processes = []
+        with Manager() as manager:
+            result_list = manager.list()
+            for i in range(num_processes):
+                start = i * step + 1
+                end = max_number if i == num_processes - 1 else (i + 1) * step
+                p = Process(target=find_primes, args=(start, end, i, result_list), name=f"PrimeFinder-{i}")
+                processes.append(p)
+                p.start()
+            for p in processes:
+                p.join()
+            primes = sorted(result_list)
+            with open("all_primes.txt", "w") as f:
+                for prime in primes:
+                    f.write(f"{prime}\n")
+            logging.info(f"Всего найдено {len(primes)} простых чисел")
+            print(f"\nНайдено {len(primes)} простых чисел. Результаты сохранены в all_primes.txt")
+    except ValueError:
+        print("Ошибка: введите корректное число")
+    except Exception as e:
+        logging.error(f"Ошибка: {str(e)}")
+if __name__ == '__main__':
+    main()
